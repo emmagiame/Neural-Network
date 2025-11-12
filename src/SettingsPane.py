@@ -230,7 +230,7 @@ class GameSettingsFrame ( ) :
         more_settings [ "timeout_limit" ] = self.additionalOptionsFrame.public_timeout
         if more_settings [ "timeout" ] :
             # convert n to integer
-            rgx_float = re.compile ( "^[0-9]+(\.[0-9]+)?$" )
+            rgx_float = re.compile ( "^[0-9]+(\\.[0-9]+)?$" )
             if not rgx_float.match(more_settings [ "timeout_limit" ]) :
                 title = "Error: Additional Settings"
                 message = "Games could not be started.\nError: Invalid timeout"
@@ -274,7 +274,7 @@ class GameSettingsFrame ( ) :
             more_settings [ "timeout_limit" ] = self.additionalOptionsFrame.public_timeout
             if more_settings [ "timeout" ] :
                 # convert n to integer
-                rgx_float = re.compile ( "^[0-9]+(\.[0-9]+)?$" )
+                rgx_float = re.compile ( "^[0-9]+(\\.[0-9]+)?$" )
                 if not rgx_float.match(more_settings [ "timeout_limit" ]) :
                     title = "Error: Additional Settings"
                     message = "Games could not be started.\nError: Invalid timeout"
@@ -738,7 +738,7 @@ class AdditionalSettingsOptionsFrame ( wgt.ScrollableFrame ) :
 
         r = [ o['opt'] for o in self.options ].index("timeout")
         sv = tk.StringVar()
-        sv.trace("w", lambda name, index, mode, sv=sv: self.timeChanged(sv))
+        sv.trace_add("write", lambda name, index, mode, sv=sv: self.timeChanged(sv))
         self.o_timeoutText = tk.Entry ( self.interior, textvar = sv )
         self.o_timeoutText.grid ( row = r, column = 1, sticky=tk.W )
         self.sv = sv
