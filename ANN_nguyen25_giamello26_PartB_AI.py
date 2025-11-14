@@ -10,6 +10,8 @@
 import random
 import sys
 import numpy as np
+import os
+import json
 sys.path.append("..")  #so other modules can be found in parent dir
 from Player import *
 from Constants import *
@@ -405,9 +407,14 @@ class AIPlayer(Player):
         # Storage for training data (to follow the hint about randomization)
         self.trainingBuffer = []
         
-        # Hard-coded weights (will be set after training)
-        # These are placeholder values - replace with actual trained weights
+        # Hard-coded weights (will be set after training).
+        # The full trained weights are shipped in `trained_weights.json`.
+        # To avoid repeatedly calling the original heuristic after the
+        # network is good enough we will load and use these weights.
         self.hardcodedWeights = None
+        self.hardcodedWeightsPath = os.path.join(os.path.dirname(__file__), '..', 'trained_weights.json')
+        # Threshold to decide when to switch to hard-coded weights.
+        self.hardcodeThreshold = 0.01
     
     ##
     # Set hard-coded weights after training.
@@ -459,8 +466,9 @@ class AIPlayer(Player):
         if not moves:
             return Move(END)
         
-        # Collect training data from current state
-        self.addToTrainingBuffer(currentState)
+        # Collect training data from current state (only while training)
+        if not self.useHardcodedWeights:
+            self.addToTrainingBuffer(currentState)
         
         bestMove = None
         bestUtility = -1
@@ -468,9 +476,17 @@ class AIPlayer(Player):
         for move in moves:
             nextState = getNextState(currentState, move)
             
-            # Use heuristic for move evaluation (always reliable)
-            # This ensures good gameplay while collecting training data
-            utility = HeuristicUtility.evaluate(nextState, currentState.whoseTurn)
+            # Use network if we have switched to hard-coded weights,
+            # otherwise fall back to the heuristic (used while training).
+            if self.useHardcodedWeights:
+                try:
+                    features = StateEncoder.encodeState(nextState, currentState.whoseTurn)
+                    utility = float(self.network.predict(features))
+                except Exception:
+                    utility = 0.0
+            else:
+                # This ensures good gameplay while collecting training data
+                utility = HeuristicUtility.evaluate(nextState, currentState.whoseTurn)
             
             # Track best move
             if utility > bestUtility:
@@ -496,7 +512,24 @@ class AIPlayer(Player):
             try:
                 buffer_size = max(1, len(self.trainingBuffer))
                 epochs = min(400, max(50, buffer_size // 5))
-                _ = self.trainOnBuffer(epochs=epochs)
+                totalError = self.trainOnBuffer(epochs=epochs)
+
+                # If error is sufficiently low, load hard-coded weights
+                # and switch to using the neural network exclusively.
+                if totalError is not None and totalError < self.hardcodeThreshold:
+                    try:
+                        # Prefer embedded weights if available, otherwise load file
+                        if self.hardcodedWeights is None and os.path.exists(self.hardcodedWeightsPath):
+                            with open(self.hardcodedWeightsPath, 'r') as fh:
+                                weights = json.load(fh)
+                                self.setHardcodedWeights(weights)
+                        elif self.hardcodedWeights is not None:
+                            self.setHardcodedWeights(self.hardcodedWeights)
+
+                        # Clear buffer and stop further training
+                        self.trainingBuffer = []
+                    except Exception:
+                        pass
             except Exception:
                 # swallow exceptions to avoid console output; training failure shouldn't stop game flow
                 pass
@@ -507,6 +540,9 @@ class AIPlayer(Player):
     ##
     def trainOnGameState(self, gameState):
         try:
+            # If we've switched to hard-coded weights, do not call the heuristic.
+            if self.useHardcodedWeights:
+                return 0.0
             # Encode state
             features = StateEncoder.encodeState(gameState, self.playerId)
             
@@ -525,6 +561,9 @@ class AIPlayer(Player):
     ##
     def addToTrainingBuffer(self, gameState):
         try:
+            # Do not add more training data once we switched to hard-coded weights
+            if self.useHardcodedWeights:
+                return
             target = HeuristicUtility.evaluate(gameState, self.playerId)
             features = StateEncoder.encodeState(gameState, self.playerId)
             self.trainingBuffer.append((features, target))
