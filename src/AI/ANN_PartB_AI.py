@@ -492,79 +492,14 @@ class AIPlayer(Player):
     def registerWin(self, hasWon):
         # Train network on buffered game states if available
         if self.trainingBuffer:
-            num_states = len(self.trainingBuffer)
-            print(f"\n{'='*60}")
-            print(f"TRAINING AFTER GAME ({'WON' if hasWon else 'LOST'})")
-            print(f"{'='*60}")
-            print(f"Training on {num_states} states from this game...")
-            
+            # Perform training silently (no console output)
             try:
-                # Choose epochs adaptively based on buffer size (min 50, max 400)
                 buffer_size = max(1, len(self.trainingBuffer))
                 epochs = min(400, max(50, buffer_size // 5))
-                print(f"Using {epochs} training epochs (buffer size {buffer_size})...")
-                error = self.trainOnBuffer(epochs=epochs)
-                print(f"Training complete. Final average error: {error:.6f}")
-                
-                # Provide feedback on training progress
-                if error < 0.001:
-                    print("✓ EXCELLENT: Error < 0.001 - Network is well trained!")
-                    print("  Consider hard-coding weights now.")
-                elif error < 0.01:
-                    print("✓ GOOD: Error < 0.01 - Network is learning well.")
-                    print("  Play more games to further improve.")
-                elif error < 0.05:
-                    print("⚠ FAIR: Error < 0.05 - Network is training but needs more data.")
-                    print("  Continue playing games.")
-                else:
-                    print("⚠ HIGH ERROR: Network needs more training or parameter tuning.")
-                    print("  Consider adjusting learning rate or network architecture.")
-                
-                # Show total training data collected
-                print(f"\nTotal states in buffer: {num_states}")
-                
-                # Suggest when to save weights (STRICTER requirements)
-                # Require: very low error, many states, many games, AND good gameplay
-                total_games_estimate = num_states // 25  # Rough estimate (25 states per game avg)
-                
-                if error < 0.003 and num_states > 600 and total_games_estimate >= 24:
-                    print("\n" + "="*60)
-                    print("READY TO HARD-CODE WEIGHTS!")
-                    print("="*60)
-                    print(f"Excellent training: ~{total_games_estimate} games, {num_states} states")
-                    print(f"Final error: {error:.6f} (very low!)")
-                    
-                    # Auto-save weights to file
-                    try:
-                        import pprint
-                        weights = self.network.getWeights()
-                        # Print a Python-ready snippet instead of raw JSON to keep console readable
-                        py_snippet = "TRAINED_WEIGHTS = " + pprint.pformat(weights, width=120)
-                        print("\n✓ TRAINED WEIGHTS (Python snippet, copy/paste to hard-code):\n")
-                        print(py_snippet)
-                    except Exception as e:
-                        print(f"Could not prepare Python weights snippet: {e}")
-                    
-                    print("\nBEFORE hard-coding, verify your AI:")
-                    print("  - Collects food consistently")
-                    print("  - Wins ≥70% against Random, FoodGatherer, Booger")
-                    print("\nIf gameplay is good, hard-code these weights:")
-                    print("1. Copy contents of trained_weights.json")
-                    print("2. Paste into TRAINED_WEIGHTS at top of AIPlayer class")
-                    print("3. In __init__, uncomment: self.setHardcodedWeights(TRAINED_WEIGHTS)")
-                    print("4. Modify getMove() to use network.predict() only")
-                    print("5. Remove HeuristicUtility.evaluate() calls")
-                    print("="*60)
-                elif total_games_estimate >= 5:
-                    # Show progress
-                    print(f"\nProgress: ~{total_games_estimate} games, {num_states} states")
-                    print(f"Current error: {error:.6f}")
-                    print(f"Keep training! Need: error < 0.003, 600+ states, 24+ games")
-                
-            except Exception as e:
-                print(f"Training error: {e}")
-            
-            print()
+                _ = self.trainOnBuffer(epochs=epochs)
+            except Exception:
+                # swallow exceptions to avoid console output; training failure shouldn't stop game flow
+                pass
     
     ##
     # Train the network on a single game state.
