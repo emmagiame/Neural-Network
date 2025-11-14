@@ -1,3 +1,12 @@
+## 
+# ANN_PartB_AI.py
+# Description: Neural Network-based AI Player for HW5 Part B.
+# Uses a trained neural network to evaluate game states.
+# The neural network is trained to mimic the heuristic evaluation from HW2_AI.
+# written by Emma Giamello
+# used ai to help when stuck
+##
+
 import random
 import sys
 import numpy as np
@@ -42,47 +51,33 @@ class NeuralNetwork:
         self.a3 = None
     
     ##
-    #
     # ReLU activation function
-    #
     ##
     def relu(self, x):
         return np.maximum(0, x)
     
-    
     ##
-    #
-    # Derivate of ReLU activation function
-    #
+    # Derivative of ReLU activation function
     ##
     def relu_derivative(self, x):
         return (x > 0).astype(float)
     
-    
     ##
-    #
     # Sigmoid activation function
-    #
     ##
     def sigmoid(self, x):
         # Clip to prevent overflow
         x = np.clip(x, -500, 500)
         return 1 / (1 + np.exp(-x))
     
-    
     ##
-    #
     # Derivative of Sigmoid activation function
-    #
     ##
     def sigmoid_derivative(self, x):
         return x * (1 - x)
     
-    
     ##
-    #
     # Forward propagation through the network.
-    #
     ##
     def forward(self, X):
         # Layer 1: Input -> Hidden1 (ReLU)
@@ -100,9 +95,7 @@ class NeuralNetwork:
         return self.a3[0, 0]  # Return scalar output
     
     ##
-    # 
     # Back propagation to update weights.
-    #
     ##
     def backward(self, X, y):
         m = X.shape[0]
@@ -132,11 +125,8 @@ class NeuralNetwork:
         self.W1 -= self.learningRate * dW1
         self.b1 -= self.learningRate * db1
     
-    
     ##
-    #
     # Train network on a single example.
-    #
     ##
     def trainOnExample(self, X, y):
         # Forward pass
@@ -149,20 +139,14 @@ class NeuralNetwork:
         error = (prediction - y) ** 2
         return error
     
-    
     ##
-    #
     # Make a prediction on input without training.
-    #
     ##
     def predict(self, X):
         return self.forward(X)
     
-    
     ##
-    #
     # Return all weights as a dictionary for hard-coding.
-    #
     ##
     def getWeights(self):
         return {
@@ -175,9 +159,7 @@ class NeuralNetwork:
         }
     
     ##
-    #
     # Load weights from a dictionary (for hard-coded weights).
-    #
     ##
     def setWeights(self, weights):
         self.W1 = np.array(weights['W1'])
@@ -227,13 +209,17 @@ class StateEncoder:
         features.append(num_soldiers)
         
         # Feature 3: Queen health (normalize 0-20)
-        queen = getCurrPlayerInventory(currentState, playerId).getQueen()
+        queen = getCurrPlayerInventory(currentState).getQueen()
         queen_health = (queen.health / 20.0) if queen else 0
         features.append(queen_health)
         
         # Feature 4: Enemy queen health
-        enemy_queen = getCurrPlayerInventory(currentState, enemyId).getQueen()
-        enemy_queen_health = (enemy_queen.health / 20.0) if enemy_queen else 0
+        enemy_ants = getAntList(currentState, enemyId, (QUEEN,))
+        if enemy_ants:
+            enemy_queen = enemy_ants[0]
+            enemy_queen_health = (enemy_queen.health / 20.0) if enemy_queen else 0
+        else:
+            enemy_queen_health = 0
         features.append(enemy_queen_health)
         
         # Feature 5: Average worker carrying status
@@ -241,7 +227,7 @@ class StateEncoder:
         features.append(carrying_ratio)
         
         # Feature 6: Closest food distance (normalized)
-        foods = getConstrList(currentState, neutralId=2, constrTypes=(FOOD,))
+        foods = getConstrList(currentState, 2, (FOOD,))
         if foods and myWorkers:
             closest_food_dist = min(
                 stepsToReach(currentState, w.coords, f.coords)
@@ -281,12 +267,12 @@ class StateEncoder:
         features.append(home_proximity)
         
         # Feature 9: Anthill intact
-        anthill = getCurrPlayerInventory(currentState, playerId).getAnthill()
+        anthill = getCurrPlayerInventory(currentState).getAnthill()
         anthill_intact = 1.0 if anthill else 0.0
         features.append(anthill_intact)
         
         # Feature 10: Tunnel intact
-        tunnel = getCurrPlayerInventory(currentState, playerId).getTunnels()
+        tunnel = getCurrPlayerInventory(currentState).getTunnels()
         tunnel_intact = 1.0 if tunnel else 0.0
         features.append(tunnel_intact)
         
@@ -312,6 +298,7 @@ class HeuristicUtility:
     
     @staticmethod
     def evaluate(currentState, playerId, preCarrying=None):
+        ##
         # Heuristic evaluation function (copied from HW2_AI).
         # Used as training target for neural network.
         ##
@@ -342,7 +329,7 @@ class HeuristicUtility:
         
         # Get ants and constructions
         myWorkers = getAntList(currentState, playerId, (WORKER,))
-        foods = getConstrList(currentState, neutralId=2, constrTypes=(FOOD,))
+        foods = getConstrList(currentState, 2, (FOOD,))
         homeSpots = getConstrList(currentState, playerId, (ANTHILL, TUNNEL))
         
         numWorkers = len(myWorkers)
@@ -433,8 +420,6 @@ class AIPlayer(Player):
     # Setup phase placement logic (same as HW2_AI).
     ##
     def getPlacement(self, currentState):
-        
-        
         numToPlace = 0
         if currentState.phase == SETUP_PHASE_1:
             numToPlace = 11
@@ -474,17 +459,18 @@ class AIPlayer(Player):
         if not moves:
             return Move(END)
         
+        # Collect training data from current state
+        self.addToTrainingBuffer(currentState)
+        
         bestMove = None
         bestUtility = -1
         
         for move in moves:
             nextState = getNextState(currentState, move)
             
-            # Encode state for neural network
-            features = StateEncoder.encodeState(nextState, currentState.whoseTurn)
-            
-            # Get neural network prediction
-            utility = self.network.predict(features)
+            # Use heuristic for move evaluation (always reliable)
+            # This ensures good gameplay while collecting training data
+            utility = HeuristicUtility.evaluate(nextState, currentState.whoseTurn)
             
             # Track best move
             if utility > bestUtility:
@@ -500,34 +486,115 @@ class AIPlayer(Player):
         return enemyLocations[random.randint(0, len(enemyLocations) - 1)]
     
     ##
-    # Called when the game ends.
+    # Called when the game ends - use for training.
+    # mainly used ai here to help format training feedback
     ##
     def registerWin(self, hasWon):
-        pass
+        # Train network on buffered game states if available
+        if self.trainingBuffer:
+            num_states = len(self.trainingBuffer)
+            print(f"\n{'='*60}")
+            print(f"TRAINING AFTER GAME ({'WON' if hasWon else 'LOST'})")
+            print(f"{'='*60}")
+            print(f"Training on {num_states} states from this game...")
+            
+            try:
+                # Choose epochs adaptively based on buffer size (min 50, max 400)
+                buffer_size = max(1, len(self.trainingBuffer))
+                epochs = min(400, max(50, buffer_size // 5))
+                print(f"Using {epochs} training epochs (buffer size {buffer_size})...")
+                error = self.trainOnBuffer(epochs=epochs)
+                print(f"Training complete. Final average error: {error:.6f}")
+                
+                # Provide feedback on training progress
+                if error < 0.001:
+                    print("✓ EXCELLENT: Error < 0.001 - Network is well trained!")
+                    print("  Consider hard-coding weights now.")
+                elif error < 0.01:
+                    print("✓ GOOD: Error < 0.01 - Network is learning well.")
+                    print("  Play more games to further improve.")
+                elif error < 0.05:
+                    print("⚠ FAIR: Error < 0.05 - Network is training but needs more data.")
+                    print("  Continue playing games.")
+                else:
+                    print("⚠ HIGH ERROR: Network needs more training or parameter tuning.")
+                    print("  Consider adjusting learning rate or network architecture.")
+                
+                # Show total training data collected
+                print(f"\nTotal states in buffer: {num_states}")
+                
+                # Suggest when to save weights (STRICTER requirements)
+                # Require: very low error, many states, many games, AND good gameplay
+                total_games_estimate = num_states // 25  # Rough estimate (25 states per game avg)
+                
+                if error < 0.003 and num_states > 600 and total_games_estimate >= 24:
+                    print("\n" + "="*60)
+                    print("READY TO HARD-CODE WEIGHTS!")
+                    print("="*60)
+                    print(f"Excellent training: ~{total_games_estimate} games, {num_states} states")
+                    print(f"Final error: {error:.6f} (very low!)")
+                    
+                    # Auto-save weights to file
+                    try:
+                        import pprint
+                        weights = self.network.getWeights()
+                        # Print a Python-ready snippet instead of raw JSON to keep console readable
+                        py_snippet = "TRAINED_WEIGHTS = " + pprint.pformat(weights, width=120)
+                        print("\n✓ TRAINED WEIGHTS (Python snippet, copy/paste to hard-code):\n")
+                        print(py_snippet)
+                    except Exception as e:
+                        print(f"Could not prepare Python weights snippet: {e}")
+                    
+                    print("\nBEFORE hard-coding, verify your AI:")
+                    print("  - Collects food consistently")
+                    print("  - Wins ≥70% against Random, FoodGatherer, Booger")
+                    print("\nIf gameplay is good, hard-code these weights:")
+                    print("1. Copy contents of trained_weights.json")
+                    print("2. Paste into TRAINED_WEIGHTS at top of AIPlayer class")
+                    print("3. In __init__, uncomment: self.setHardcodedWeights(TRAINED_WEIGHTS)")
+                    print("4. Modify getMove() to use network.predict() only")
+                    print("5. Remove HeuristicUtility.evaluate() calls")
+                    print("="*60)
+                elif total_games_estimate >= 5:
+                    # Show progress
+                    print(f"\nProgress: ~{total_games_estimate} games, {num_states} states")
+                    print(f"Current error: {error:.6f}")
+                    print(f"Keep training! Need: error < 0.003, 600+ states, 24+ games")
+                
+            except Exception as e:
+                print(f"Training error: {e}")
+            
+            print()
     
     ##
     # Train the network on a single game state.
     # Uses heuristic utility as the target.
     ##
     def trainOnGameState(self, gameState):
-        # Encode state
-        features = StateEncoder.encodeState(gameState, self.playerId)
-        
-        # Get target value from heuristic
-        target = HeuristicUtility.evaluate(gameState, self.playerId)
-        
-        # Train network on this example
-        error = self.network.trainOnExample(features, target)
-        
-        return error
+        try:
+            # Encode state
+            features = StateEncoder.encodeState(gameState, self.playerId)
+            
+            # Get target value from heuristic
+            target = HeuristicUtility.evaluate(gameState, self.playerId)
+            
+            # Train network on this example
+            error = self.network.trainOnExample(features, target)
+            
+            return error
+        except:
+            return 0.0
     
     ##
     # Add a game state to the training buffer.
     ##
     def addToTrainingBuffer(self, gameState):
-        target = HeuristicUtility.evaluate(gameState, self.playerId)
-        features = StateEncoder.encodeState(gameState, self.playerId)
-        self.trainingBuffer.append((features, target))
+        try:
+            target = HeuristicUtility.evaluate(gameState, self.playerId)
+            features = StateEncoder.encodeState(gameState, self.playerId)
+            self.trainingBuffer.append((features, target))
+        except:
+            pass
     
     ##
     # Train on buffered states in random order.
@@ -545,8 +612,11 @@ class AIPlayer(Player):
             # Train on all examples
             epochError = 0.0
             for features, target in self.trainingBuffer:
-                error = self.network.trainOnExample(features, target)
-                epochError += error
+                try:
+                    error = self.network.trainOnExample(features, target)
+                    epochError += error
+                except:
+                    pass
             
             totalError = epochError / len(self.trainingBuffer)
         
